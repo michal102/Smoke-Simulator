@@ -1,8 +1,6 @@
-// Each #kernel tells which function to compile; you can have many kernels
+// kernel that sets a uv texture to a raw image
 #pragma kernel CSMain
 
-// Create a RenderTexture with enableRandomWrite flag and set it
-// with cs.SetTexture
 RWTexture2D<float4> Result;
 float2 TextureSize;
 
@@ -184,8 +182,6 @@ void AdvectDensity(uint3 id : SV_DispatchThreadID)
 
 // =======================================================
 // DIFFUSE (Jacobi) - single kernel for scalar or vector depending on bindings
-// Configure DiffuseAlpha and DiffuseBeta from C# before dispatch.
-// If you want to run only on density or only on velocity, bind/unbind appropriately.
 // =======================================================
 
 #pragma kernel DiffuseVelocity
@@ -235,7 +231,6 @@ void DiffuseDensity(uint3 id : SV_DispatchThreadID)
 // COMPUTE DIVERGENCE
 // div = (<inv6>u/<inv6>x + <inv6>v/<inv6>y) using central differences
 // divergence = ((vR.x - vL.x) / (2h)) + ((vT.y - vB.y) / (2h))
-// We'll store divergence in DivergenceTex
 // =======================================================
 
 #pragma kernel ComputeDivergence
@@ -262,7 +257,6 @@ void ComputeDivergence(uint3 id : SV_DispatchThreadID)
 // =======================================================
 // PRESSURE JACOBI: Solve <delta^2> p = divergence
 // p_new = (pL + pR + pB + pT - divergence * h * h) * 0.25
-// Make sure C# binds PressureRead, PressureWrite and DivergenceTex
 // =======================================================
 
 #pragma kernel PressureJacobi
@@ -375,3 +369,4 @@ void VisualizeVelocity(uint3 id : SV_DispatchThreadID)
     float3 rgb = hsv2rgb(float3(hue, sat, val));
     VelocityDebug[id.xy] = float4(rgb, 1.0);
 }
+

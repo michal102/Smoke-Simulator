@@ -50,7 +50,7 @@ public class FluidSimulator : MonoBehaviour
 
     [HideInInspector] public RenderTexture dyeTexture;
 
-    // Track current resolution so we can recreate RTs if it changes
+    // Track current resolution
     private int currentWidth;
     private int currentHeight;
 
@@ -438,13 +438,10 @@ public class FluidSimulator : MonoBehaviour
         divergence = CreateRT(currentWidth, currentHeight, RenderTextureFormat.RFloat);
         dyeTexture = CreateRT(width, height, RenderTextureFormat.ARGBFloat);
 
-        // optional: clear them (a simple clear with Graphics.Blit or compute clear kernel is fine)
-        // e.g. Graphics.SetRenderTarget(density); GL.Clear(false, true, Color.clear);
     }
 
     RenderTexture CreateRT(int w, int h, RenderTextureFormat format)
     {
-        // Fallbacks: some platforms might not support ARGBFloat/RFloat; check in runtime if needed.
         var rt = new RenderTexture(w, h, 0, format)
         {
             enableRandomWrite = true,
@@ -497,3 +494,4 @@ public class FluidSimulator : MonoBehaviour
     }
 
 }
+

@@ -1,0 +1,17 @@
+// Each #kernel tells which function to compile; you can have many kernels
+#pragma kernel CSMain
+
+// Create a RenderTexture with enableRandomWrite flag and set it
+// with cs.SetTexture
+RWTexture2D<float4> Result;
+float2 TextureSize;
+
+[numthreads(8,8,1)]
+void CSMain (uint2 id : SV_DispatchThreadID)
+{
+    // Get the texture size (for normalizing the UV coordinates)
+    float2 uv = float2(id.x, id.y) / TextureSize;
+
+    // Output the UV coordinates as RGB (to visualize them)
+    Result[id] = float4(uv, 0.0f, 1.0f); // Red = u, Green = v, Blue = 0, Alpha = 1
+}

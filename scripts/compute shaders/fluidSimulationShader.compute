@@ -1,6 +1,8 @@
-// kernel that sets a uv texture to a raw image
+// Each #kernel tells which function to compile; you can have many kernels
 #pragma kernel CSMain
 
+// Create a RenderTexture with enableRandomWrite flag and set it
+// with cs.SetTexture
 RWTexture2D<float4> Result;
 float2 TextureSize;
 
@@ -23,6 +25,8 @@ void CSMain (uint2 id : SV_DispatchThreadID)
 #define THREADS_Y 8
 
 uint2 Resolution; // (width, height)
+
+uint4 simRect;
 
 // for AddForce kernel
 float2 ForceOrigin; // in [0,1] UV
@@ -68,6 +72,13 @@ void AddForceLine(uint3 id : SV_DispatchThreadID)
 {
     if (id.x >= Resolution.x || id.y >= Resolution.y)
         return;
+    
+    if (id.x > simRect.x + simRect.z || id.x < simRect.z || id.y > simRect.y + simRect.w || id.y < simRect.w)
+    {
+        DensityWrite[id.xy] = 0;
+        VelocityWrite[id.xy] = 0;
+        return;
+    }
 
     float2 uv = (float2(id.xy) + 0.5) / float2(Resolution);
 
@@ -137,6 +148,12 @@ void AdvectVelocity(uint3 id : SV_DispatchThreadID)
 {
     if (id.x >= Resolution.x || id.y >= Resolution.y)
         return;
+    
+    if (id.x > simRect.x + simRect.z || id.x < simRect.z || id.y > simRect.y + simRect.w || id.y < simRect.w)
+    {
+        VelocityWrite[id.xy] = 0;
+        return;
+    }
 
     float2 uv = (float2(id.xy) + 0.5) / float2(Resolution); // normalized uv
     float2 vel = SampleVelocityUV(VelocityRead, uv);
@@ -165,6 +182,12 @@ void AdvectDensity(uint3 id : SV_DispatchThreadID)
 {
     if (id.x >= Resolution.x || id.y >= Resolution.y)
         return;
+    
+    if (id.x > simRect.x + simRect.z || id.x < simRect.z || id.y > simRect.y + simRect.w || id.y < simRect.w)
+    {
+        DensityWrite[id.xy] = 0;
+        return;
+    }
 
     float2 uv = (float2(id.xy) + 0.5) / float2(Resolution); // normalized uv
     float2 vel = SampleVelocityUV(VelocityRead, uv);
@@ -181,7 +204,7 @@ void AdvectDensity(uint3 id : SV_DispatchThreadID)
 
 
 // =======================================================
-// DIFFUSE (Jacobi) - single kernel for scalar or vector depending on bindings
+// DIFFUSE (Jacobi)
 // =======================================================
 
 #pragma kernel DiffuseVelocity
@@ -191,6 +214,13 @@ void DiffuseVelocity(uint3 id : SV_DispatchThreadID)
 {
     if (id.x >= Resolution.x || id.y >= Resolution.y)
         return;
+    
+    if (id.x > simRect.x + simRect.z || id.x < simRect.z || id.y > simRect.y + simRect.w || id.y < simRect.w)
+    {
+        VelocityWrite[id.xy] = 0;
+        return;
+    }
+    
     float2 uv = (float2(id.xy) + 0.5) / float2(Resolution);
     float2 px = 1.0 / float2(Resolution);
 
@@ -211,6 +241,13 @@ void DiffuseDensity(uint3 id : SV_DispatchThreadID)
 {
     if (id.x >= Resolution.x || id.y >= Resolution.y)
         return;
+    
+    if (id.x > simRect.x + simRect.z || id.x < simRect.z || id.y > simRect.y + simRect.w || id.y < simRect.w)
+    {
+        DensityWrite[id.xy] = 0;
+        return;
+    }
+    
     float2 uv = (float2(id.xy) + 0.5) / float2(Resolution);
     float2 px = 1.0 / float2(Resolution);
 
@@ -231,6 +268,7 @@ void DiffuseDensity(uint3 id : SV_DispatchThreadID)
 // COMPUTE DIVERGENCE
 // div = (<inv6>u/<inv6>x + <inv6>v/<inv6>y) using central differences
 // divergence = ((vR.x - vL.x) / (2h)) + ((vT.y - vB.y) / (2h))
+// We'll store divergence in DivergenceTex
 // =======================================================
 
 #pragma kernel ComputeDivergence
@@ -240,6 +278,12 @@ void ComputeDivergence(uint3 id : SV_DispatchThreadID)
 {
     if (id.x >= Resolution.x || id.y >= Resolution.y)
         return;
+    
+    if (id.x > simRect.x + simRect.z || id.x < simRect.z || id.y > simRect.y + simRect.w || id.y < simRect.w)
+    {
+        DivergenceWrite[id.xy] = 0;
+        return;
+    }
 
     float2 uv = (float2(id.xy) + 0.5) / float2(Resolution);
     float2 px = 1.0 / float2(Resolution);
@@ -257,6 +301,7 @@ void ComputeDivergence(uint3 id : SV_DispatchThreadID)
 // =======================================================
 // PRESSURE JACOBI: Solve <delta^2> p = divergence
 // p_new = (pL + pR + pB + pT - divergence * h * h) * 0.25
+// Make sure C# binds PressureRead, PressureWrite and DivergenceTex
 // =======================================================
 
 #pragma kernel PressureJacobi
@@ -266,6 +311,12 @@ void PressureJacobi(uint3 id : SV_DispatchThreadID)
 {
     if (id.x >= Resolution.x || id.y >= Resolution.y)
         return;
+    
+    if (id.x > simRect.x + simRect.z || id.x < simRect.z || id.y > simRect.y + simRect.w || id.y < simRect.w)
+    {
+        PressureWrite[id.xy] = 0;
+        return;
+    }
 
     float2 uv = (float2(id.xy) + 0.5) / float2(Resolution);
     float2 px = 1.0 / float2(Resolution);
@@ -295,6 +346,12 @@ void SubtractGradient(uint3 id : SV_DispatchThreadID)
 {
     if (id.x >= Resolution.x || id.y >= Resolution.y)
         return;
+    
+    if (id.x > simRect.x + simRect.z || id.x < simRect.z || id.y > simRect.y + simRect.w || id.y < simRect.w)
+    {
+        VelocityWrite[id.xy] = 0;
+        return;
+    }
 
     float2 uv = (float2(id.xy) + 0.5) / float2(Resolution);
     float2 px = 1.0 / float2(Resolution);
@@ -321,6 +378,8 @@ RWTexture2D<float4> DyeWrite;
 Texture2D<float4> DensityGradient;
 float4 BackgroundColor;
 
+float absConst;
+
 [numthreads(8, 8, 1)]
 void ColorizeDensity(uint3 id : SV_DispatchThreadID)
 {
@@ -331,7 +390,10 @@ void ColorizeDensity(uint3 id : SV_DispatchThreadID)
     float4 dyeCol = DensityGradient.SampleLevel(sampler_linear_clamp, float2(saturate(densityVal), 0), 0);
 
     // Mix with background
-    float4 finalColor = lerp(BackgroundColor, dyeCol, saturate(densityVal));
+    //float4 finalColor = lerp(BackgroundColor, dyeCol, saturate(densityVal));
+    
+    float absorption = exp(-densityVal * absConst); // tune constant
+    float4 finalColor = lerp(BackgroundColor.rgba, dyeCol.rgba, 1.0 - absorption);
 
     DyeWrite[id.xy] = finalColor;
 }
@@ -369,4 +431,3 @@ void VisualizeVelocity(uint3 id : SV_DispatchThreadID)
     float3 rgb = hsv2rgb(float3(hue, sat, val));
     VelocityDebug[id.xy] = float4(rgb, 1.0);
 }
-

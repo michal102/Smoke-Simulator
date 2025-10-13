@@ -5,11 +5,16 @@ using UnityEngine.UI;
 public class FluidSimulator : MonoBehaviour
 {
 
-    [Header("Aspect")]
-    public int width = 1000;
-    public int height = 1000;
-    public AspectDriven aspectDriven; //TODO - actually address the issue by clampiing the simulation area in the texture
-    public enum AspectDriven { width, height }
+    [Header("Resolution [match with rect transform]")]
+    public int resolution = 1000;
+
+    [Header("Simulation Bounds [per pixel]")]
+    public Vector2 boundsPos = Vector2.zero;
+    public Vector2 boundsSize = new Vector2(1000, 1000);
+    private Rect simRect;
+
+    //public AspectDriven aspectDriven; //TODO - actually address the issue by clampiing the simulation area in the texture
+    //public enum AspectDriven { width, height }
 
     [Header("Simulation Settings")]
     public float force = 100f;
@@ -25,6 +30,7 @@ public class FluidSimulator : MonoBehaviour
     public Gradient densityGradient;
     private Texture2D gradientTex;              // internal lookup texture
     public Color backgroundColor = Color.black; // background, can be transparent
+    public float absConst = 2f;
 
 
     [Header("Compute Shader")]
@@ -37,6 +43,7 @@ public class FluidSimulator : MonoBehaviour
     [Header("Debug View")]
     public DebugTextureType debugTextureType;
     public enum DebugTextureType { Dye, Density, Velocity, Pressure, Divergence }
+    public bool useKeyboardShortcuts = false;
 
     // --- Internal RenderTextures ---
     [HideInInspector] public RenderTexture velocity;
@@ -50,7 +57,7 @@ public class FluidSimulator : MonoBehaviour
 
     [HideInInspector] public RenderTexture dyeTexture;
 
-    // Track current resolution
+    // Track current resolution so we can recreate RTs if it changes
     private int currentWidth;
     private int currentHeight;
 
@@ -99,7 +106,7 @@ public class FluidSimulator : MonoBehaviour
 
         rawOwo = GetComponent<UnityEngine.UI.RawImage>();
 
-        renderTexture = new RenderTexture(width, height, 24);
+        renderTexture = new RenderTexture(resolution, resolution, 24);
         renderTexture.enableRandomWrite = true;
         renderTexture.filterMode = FilterMode.Point;
         renderTexture.wrapMode = TextureWrapMode.Repeat;
@@ -109,12 +116,13 @@ public class FluidSimulator : MonoBehaviour
         ChangeDisplayTexture();
 
         //RunComputeShader();
+        simRect = new Rect(boundsPos, boundsSize);
     }
 
     private void FixedUpdate()
     {
         // if you change resolution in inspector while playing, recreate RTs
-        if (width != currentWidth || height != currentHeight)
+        if (resolution != currentWidth || resolution != currentHeight)
             CreateOrUpdateRTs();
 
         //UpdateTexture();
@@ -125,10 +133,10 @@ public class FluidSimulator : MonoBehaviour
             int kernel = computeShader.FindKernel("VisualizeVelocity");
             computeShader.SetTexture(kernel, "VelocityRead", velocity);
             computeShader.SetTexture(kernel, "VelocityDebug", velocityDebug);
-            computeShader.SetInts("Resolution", width, height);
+            computeShader.SetInts("Resolution", resolution, resolution);
 
-            int groupsX = Mathf.CeilToInt(width / 8.0f);
-            int groupsY = Mathf.CeilToInt(height / 8.0f);
+            int groupsX = Mathf.CeilToInt(resolution / 8.0f);
+            int groupsY = Mathf.CeilToInt(resolution / 8.0f);
             computeShader.Dispatch(kernel, groupsX, groupsY, 1);
         }
 
@@ -154,25 +162,26 @@ public class FluidSimulator : MonoBehaviour
         //ChangeAspectDrive();
 
         HandleMouseInput(rawOwo.rectTransform);
+        if (useKeyboardShortcuts && Input.GetKeyDown(KeyCode.R)) ResetSimulation();
     }
 
 
-    void ChangeAspectDrive()
-    {
-        if (aspectDriven == AspectDriven.width) FitAsspectWidth();
-        else FitAsspectHeight();
-    }
+    //void ChangeAspectDrive()
+    //{
+    //    if (aspectDriven == AspectDriven.width) FitAsspectWidth();
+    //    else FitAsspectHeight();
+    //}
 
-    void FitAsspectWidth()
-    {
-        float aspect = width / height;
-        rawOwo.rectTransform.sizeDelta = new Vector2(width, width / aspect);
-    }
-    void FitAsspectHeight()
-    {
-        float aspect = width / height;
-        rawOwo.rectTransform.sizeDelta = new Vector2(height, height / aspect);
-    }
+    //void FitAsspectWidth()
+    //{
+    //    float aspect = resolution / resolution;
+    //    rawOwo.rectTransform.sizeDelta = new Vector2(resolution, resolution / aspect);
+    //}
+    //void FitAsspectHeight()
+    //{
+    //    float aspect = resolution / resolution;
+    //    rawOwo.rectTransform.sizeDelta = new Vector2(resolution, resolution / aspect);
+    //}
 
 
 
@@ -180,15 +189,17 @@ public class FluidSimulator : MonoBehaviour
     {
         radius = smallRadius / 100;
 
-        computeShader.SetVector("InvResolution", new Vector2(1.0f / width, 1.0f / height));
+        computeShader.SetVector("InvResolution", new Vector2(1.0f / resolution, 1.0f / resolution));
         computeShader.SetFloat("DeltaTime", Time.deltaTime);
         computeShader.SetFloat("VelocityDissipation", velocityDissipation);
         computeShader.SetFloat("DensityDissipation", densityDissipation);
 
-        float alpha = diffusionRate * width * height;
+        float alpha = diffusionRate * resolution * resolution;
         float beta = 4.0f + alpha;
         computeShader.SetFloat("DiffuseAlpha", alpha);
         computeShader.SetFloat("DiffuseBeta", beta);
+
+        computeShader.SetVector("simRect", new Vector4((uint)simRect.width, (uint)simRect.height, (uint)simRect.x, simRect.y));
     }
 
     void SimStep()
@@ -204,10 +215,10 @@ public class FluidSimulator : MonoBehaviour
             int kernel = computeShader.FindKernel("DiffuseVelocity");
             computeShader.SetTexture(kernel, "VelocityRead", velocity);
             computeShader.SetTexture(kernel, "VelocityWrite", velocityTemp);
-            computeShader.SetInts("Resolution", width, height);
+            computeShader.SetInts("Resolution", resolution, resolution);
 
-            int groupsX = Mathf.CeilToInt(width / 8.0f);
-            int groupsY = Mathf.CeilToInt(height / 8.0f);
+            int groupsX = Mathf.CeilToInt(resolution / 8.0f);
+            int groupsY = Mathf.CeilToInt(resolution / 8.0f);
             computeShader.Dispatch(kernel, groupsX, groupsY, 1);
 
             Swap(ref velocity, ref velocityTemp);
@@ -221,10 +232,10 @@ public class FluidSimulator : MonoBehaviour
             int kernel = computeShader.FindKernel("AdvectVelocity");
             computeShader.SetTexture(kernel, "VelocityRead", velocity);
             computeShader.SetTexture(kernel, "VelocityWrite", velocityTemp);
-            computeShader.SetInts("Resolution", width, height);
+            computeShader.SetInts("Resolution", resolution, resolution);
 
-            int groupsX = Mathf.CeilToInt(width / 8.0f);
-            int groupsY = Mathf.CeilToInt(height / 8.0f);
+            int groupsX = Mathf.CeilToInt(resolution / 8.0f);
+            int groupsY = Mathf.CeilToInt(resolution / 8.0f);
             computeShader.Dispatch(kernel, groupsX, groupsY, 1);
 
             Swap(ref velocity, ref velocityTemp);
@@ -239,10 +250,10 @@ public class FluidSimulator : MonoBehaviour
             int kernel = computeShader.FindKernel("DiffuseDensity");
             computeShader.SetTexture(kernel, "DensityRead", density);
             computeShader.SetTexture(kernel, "DensityWrite", densityTemp);
-            computeShader.SetInts("Resolution", width, height);
+            computeShader.SetInts("Resolution", resolution, resolution);
 
-            int groupsX = Mathf.CeilToInt(width / 8.0f);
-            int groupsY = Mathf.CeilToInt(height / 8.0f);
+            int groupsX = Mathf.CeilToInt(resolution / 8.0f);
+            int groupsY = Mathf.CeilToInt(resolution / 8.0f);
             computeShader.Dispatch(kernel, groupsX, groupsY, 1);
 
             Swap(ref density, ref densityTemp);
@@ -254,10 +265,10 @@ public class FluidSimulator : MonoBehaviour
             computeShader.SetTexture(kernel, "DensityRead", density);
             computeShader.SetTexture(kernel, "VelocityRead", velocity);
             computeShader.SetTexture(kernel, "DensityWrite", densityTemp);
-            computeShader.SetInts("Resolution", width, height);
+            computeShader.SetInts("Resolution", resolution, resolution);
 
-            int groupsX = Mathf.CeilToInt(width / 8.0f);
-            int groupsY = Mathf.CeilToInt(height / 8.0f);
+            int groupsX = Mathf.CeilToInt(resolution / 8.0f);
+            int groupsY = Mathf.CeilToInt(resolution / 8.0f);
             computeShader.Dispatch(kernel, groupsX, groupsY, 1);
 
             Swap(ref density, ref densityTemp);
@@ -273,10 +284,10 @@ public class FluidSimulator : MonoBehaviour
             int kernel = computeShader.FindKernel("ComputeDivergence");
             computeShader.SetTexture(kernel, "VelocityRead", velocity);
             computeShader.SetTexture(kernel, "DivergenceWrite", divergence);
-            computeShader.SetInts("Resolution", width, height);
+            computeShader.SetInts("Resolution", resolution, resolution);
 
-            int groupsX = Mathf.CeilToInt(width / 8.0f);
-            int groupsY = Mathf.CeilToInt(height / 8.0f);
+            int groupsX = Mathf.CeilToInt(resolution / 8.0f);
+            int groupsY = Mathf.CeilToInt(resolution / 8.0f);
             computeShader.Dispatch(kernel, groupsX, groupsY, 1);
         }
 
@@ -287,10 +298,10 @@ public class FluidSimulator : MonoBehaviour
             computeShader.SetTexture(kernel, "PressureRead", pressure);
             computeShader.SetTexture(kernel, "DivergenceRead", divergence);
             computeShader.SetTexture(kernel, "PressureWrite", pressureTemp);
-            computeShader.SetInts("Resolution", width, height);
+            computeShader.SetInts("Resolution", resolution, resolution);
 
-            int groupsX = Mathf.CeilToInt(width / 8.0f);
-            int groupsY = Mathf.CeilToInt(height / 8.0f);
+            int groupsX = Mathf.CeilToInt(resolution / 8.0f);
+            int groupsY = Mathf.CeilToInt(resolution / 8.0f);
             computeShader.Dispatch(kernel, groupsX, groupsY, 1);
 
             Swap(ref pressure, ref pressureTemp);
@@ -302,10 +313,10 @@ public class FluidSimulator : MonoBehaviour
             computeShader.SetTexture(kernel, "VelocityRead", velocity);
             computeShader.SetTexture(kernel, "PressureRead", pressure);
             computeShader.SetTexture(kernel, "VelocityWrite", velocityTemp);
-            computeShader.SetInts("Resolution", width, height);
+            computeShader.SetInts("Resolution", resolution, resolution);
 
-            int groupsX = Mathf.CeilToInt(width / 8.0f);
-            int groupsY = Mathf.CeilToInt(height / 8.0f);
+            int groupsX = Mathf.CeilToInt(resolution / 8.0f);
+            int groupsY = Mathf.CeilToInt(resolution / 8.0f);
             computeShader.Dispatch(kernel, groupsX, groupsY, 1);
 
             Swap(ref velocity, ref velocityTemp);
@@ -404,7 +415,8 @@ public class FluidSimulator : MonoBehaviour
         computeShader.SetTexture(kernel, "DensityGradient", gradientTex);
 
         computeShader.SetVector("BackgroundColor", backgroundColor);
-        computeShader.SetInts("Resolution", width, height);
+        computeShader.SetFloat("absConst", absConst);
+        computeShader.SetInts("Resolution", resolution, resolution);
 
         int groupsX = Mathf.CeilToInt(density.width / 8.0f);
         int groupsY = Mathf.CeilToInt(density.height / 8.0f);
@@ -415,33 +427,36 @@ public class FluidSimulator : MonoBehaviour
     private void CreateOrUpdateRTs()
     {
         // clamp reasonable minimum
-        width = Mathf.Max(8, width);
-        height = Mathf.Max(8, height);
+        resolution = Mathf.Max(8, resolution);
+        resolution = Mathf.Max(8, resolution);
 
         // if unchanged, nothing to do
-        if (currentWidth == width && currentHeight == height && velocity != null) return;
+        if (currentWidth == resolution && currentHeight == resolution && velocity != null) return;
 
         // free old ones (safe)
         ReleaseAll();
 
-        currentWidth = width; 
-        currentHeight = height;
+        currentWidth = resolution; 
+        currentHeight = resolution;
 
         // Create the RTs
         velocity = CreateRT(currentWidth, currentHeight, RenderTextureFormat.ARGBFloat); // store vec2 in RG
         velocityTemp = CreateRT(currentWidth, currentHeight, RenderTextureFormat.ARGBFloat);
-        velocityDebug = CreateRT(width, height, RenderTextureFormat.ARGBFloat);
+        velocityDebug = CreateRT(resolution, resolution, RenderTextureFormat.ARGBFloat);
         density = CreateRT(currentWidth, currentHeight, RenderTextureFormat.RFloat);    // scalar dye
         densityTemp = CreateRT(currentWidth, currentHeight, RenderTextureFormat.RFloat);
         pressure = CreateRT(currentWidth, currentHeight, RenderTextureFormat.RFloat);
         pressureTemp = CreateRT(currentWidth, currentHeight, RenderTextureFormat.RFloat);
         divergence = CreateRT(currentWidth, currentHeight, RenderTextureFormat.RFloat);
-        dyeTexture = CreateRT(width, height, RenderTextureFormat.ARGBFloat);
+        dyeTexture = CreateRT(resolution, resolution, RenderTextureFormat.ARGBFloat);
 
+        // optional: clear them (a simple clear with Graphics.Blit or compute clear kernel is fine)
+        // e.g. Graphics.SetRenderTarget(density); GL.Clear(false, true, Color.clear);
     }
 
     RenderTexture CreateRT(int w, int h, RenderTextureFormat format)
     {
+        // Fallbacks: some platforms might not support ARGBFloat/RFloat; check in runtime if needed.
         var rt = new RenderTexture(w, h, 0, format)
         {
             enableRandomWrite = true,
@@ -485,13 +500,28 @@ public class FluidSimulator : MonoBehaviour
     void RunComputeShader() // shows uv coordinates on texture
     {
         int kernelHandle = computeShader.FindKernel("CSMain");
-        computeShader.SetVector("TextureSize", new Vector2(width, height));
+        computeShader.SetVector("TextureSize", new Vector2(resolution, resolution));
 
         computeShader.SetTexture(kernelHandle, "Result", renderTexture);
-        computeShader.Dispatch(kernelHandle, Mathf.CeilToInt(width / 8.0f), Mathf.CeilToInt(height / 8.0f), 1);
+        computeShader.Dispatch(kernelHandle, Mathf.CeilToInt(resolution / 8.0f), Mathf.CeilToInt(resolution / 8.0f), 1);
 
         rawOwo.texture = renderTexture;
     }
 
-}
 
+    void OnDrawGizmos()
+    {
+        Gizmos.color = Color.cyan;
+
+        // Draw a 2D rectangle as a thin cube (for visibility)
+        Vector2 center = new Vector2((boundsPos.x - ((GetComponent<RectTransform>().rect.width - boundsSize.x)/2)) /(100 / GetComponent<RectTransform>().localScale.x)  , (boundsPos.y - ((GetComponent<RectTransform>().rect.height - boundsSize.y) / 2)) / (100 / GetComponent<RectTransform>().localScale.y));
+        Vector2 size = new Vector2(boundsSize.x/ (100 / GetComponent<RectTransform>().localScale.x), boundsSize.y/ (100 / GetComponent<RectTransform>().localScale.y));
+        Gizmos.DrawWireCube(center, size);
+
+
+        //// Optional: fill with translucent overlay
+        //Gizmos.color = new Color(0, 1, 1, 0.1f);
+        //Gizmos.DrawCube(center, size);
+    }
+
+}

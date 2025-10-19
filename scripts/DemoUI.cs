@@ -33,7 +33,7 @@ public class SettingsUI : MonoBehaviour
         // Initialize from simulation
         if (simulation != null)
         {
-            objectSize = simulation.smallRadius;
+            objectSize = simulation.radius;
             forceValue = simulation.force;
             iterations = simulation.jacobiIterations;
             selectedGradient = simulation.densityGradient;
@@ -118,7 +118,7 @@ public class SettingsUI : MonoBehaviour
 
         if (simulation != null)
         {
-            simulation.smallRadius = objectSize;
+            simulation.radius = objectSize;
             simulation.force = forceValue;
             simulation.densityGradient = selectedGradient;
             simulation.jacobiIterations = (int)iterations;

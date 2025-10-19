@@ -18,8 +18,8 @@ public class FluidSimulator : MonoBehaviour
 
     [Header("Simulation Settings")]
     public float force = 100f;
-    public float smallRadius = 2f;
-    private float radius = 0.02f;   // injection brush radius (in UV space)
+    public float radius = 2f;
+    private float injRadius = 0.02f;   // injection brush radius (in UV space)
     public float densityAmount = 1;
     public int jacobiIterations = 20;
     public float velocityDissipation = 0.99f;
@@ -187,7 +187,7 @@ public class FluidSimulator : MonoBehaviour
 
     void SetGlobals()
     {
-        radius = smallRadius / 100;
+        injRadius = radius / 100;
 
         computeShader.SetVector("InvResolution", new Vector2(1.0f / resolution, 1.0f / resolution));
         computeShader.SetFloat("DeltaTime", Time.deltaTime);
@@ -347,7 +347,7 @@ public class FluidSimulator : MonoBehaviour
             Vector2 drag = (uv - lastUV) * new Vector2(density.width, density.height);
             computeShader.SetVector("ForceVector", drag * force * Time.deltaTime);
 
-            computeShader.SetFloat("Radius", radius);
+            computeShader.SetFloat("Radius", injRadius);
             computeShader.SetFloat("DensityAmount", densityAmount * Time.deltaTime);
             computeShader.SetInts("Resolution", density.width, density.height);
 
@@ -514,7 +514,7 @@ public class FluidSimulator : MonoBehaviour
         Gizmos.color = Color.cyan;
 
         // Draw a 2D rectangle as a thin cube (for visibility)
-        Vector2 center = new Vector2((boundsPos.x - ((GetComponent<RectTransform>().rect.width - boundsSize.x)/2)) /(100 / GetComponent<RectTransform>().localScale.x)  , (boundsPos.y - ((GetComponent<RectTransform>().rect.height - boundsSize.y) / 2)) / (100 / GetComponent<RectTransform>().localScale.y));
+        Vector2 center = new Vector2((boundsPos.x - ((GetComponent<RectTransform>().rect.width - boundsSize.x)/2)) /(100 / GetComponent<RectTransform>().localScale.x) + GetComponent<RectTransform>().position.x, (boundsPos.y - ((GetComponent<RectTransform>().rect.height - boundsSize.y) / 2)) / (100 / GetComponent<RectTransform>().localScale.y) + GetComponent<RectTransform>().position.y);
         Vector2 size = new Vector2(boundsSize.x/ (100 / GetComponent<RectTransform>().localScale.x), boundsSize.y/ (100 / GetComponent<RectTransform>().localScale.y));
         Gizmos.DrawWireCube(center, size);
 
